@@ -133,7 +133,7 @@ public enum VSubmenuOnlineLobby implements IVSubmenu<CSubmenuOnlineLobby>, IOnli
             buttonPanel.setOpaque(false);
             buttonPanel.add(btnHost, "w 200!, h 50!");
             buttonPanel.add(btnJoin, "w 200!, h 50!");
-            buttonPanel.add(btnBrowse, "span 2, align center, w 260!, h 50!");
+            buttonPanel.add(btnBrowse, "span 2, growx, h 50!");
 
             infoBox.add(lblTitle, "ax center, gap 0 0 0 15");
             infoBox.add(lblWarning, "ax center, gap 0 0 0 15");

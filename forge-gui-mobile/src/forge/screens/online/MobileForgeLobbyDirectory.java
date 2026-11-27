@@ -5,11 +5,15 @@ import forge.gamemodes.net.ForgeLobbyClient;
 import forge.gamemodes.net.ForgeLobbyClient.Announcement;
 import forge.gamemodes.net.ForgeLobbyClient.Room;
 import forge.gamemodes.net.ForgeLobbyRoomSync;
+import forge.gamemodes.net.ForgeLobbyLabels;
+import forge.gamemodes.net.ForgeLobbyLabels.Language;
 import forge.gamemodes.net.server.FServerManager;
 import forge.gui.FThreads;
 import forge.gui.GuiBase;
 import forge.gui.util.SGuiChoose;
 import forge.toolbox.FOptionPane;
+import forge.model.FModel;
+import forge.localinstance.properties.ForgePreferences.FPref;
 import io.netty.channel.ChannelFuture;
 
 import java.io.IOException;
@@ -24,7 +28,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 
 final class MobileForgeLobbyDirectory {
-    private static final String TITLE = "Forge Lobby";
     private static final ForgeLobbyClient API = new ForgeLobbyClient(ForgeLobbyClient.PUBLIC_ENDPOINT,
             MobileForgeLobbyDirectory::request);
     private static final ScheduledExecutorService REQUESTS = Executors.newSingleThreadScheduledExecutor(task -> {
@@ -86,14 +89,14 @@ final class MobileForgeLobbyDirectory {
                 if (rooms.isEmpty()) {
                     FThreads.invokeInEdtLater(() -> {
                         loading = false;
-                        FOptionPane.showMessageDialog(label("lblForgeLobbyEmpty"), TITLE);
+                        FOptionPane.showMessageDialog(label("lblForgeLobbyEmpty"), label("lblForgeLobbyTitle"));
                     });
                     return;
                 }
                 // The synchronous chooser uses the render thread for its dialog.
                 FThreads.invokeInBackgroundThread(() -> {
                     final Room room = SGuiChoose.oneOrNone(label("lblForgeLobbyPickRoom"), rooms, null,
-                            MobileForgeLobbyDirectory::roomLabel);
+                            ForgeLobbyLabels::room);
                     FThreads.invokeInEdtLater(() -> {
                         loading = false;
                         if (room != null) {
@@ -104,7 +107,7 @@ final class MobileForgeLobbyDirectory {
             } catch (final IOException | InterruptedException e) {
                 FThreads.invokeInEdtLater(() -> {
                     loading = false;
-                    FOptionPane.showErrorDialog(label("lblForgeLobbyListError"), TITLE);
+                    FOptionPane.showErrorDialog(label("lblForgeLobbyListError"), label("lblForgeLobbyTitle"));
                 });
             }
         });
@@ -117,20 +120,21 @@ final class MobileForgeLobbyDirectory {
             return;
         }
         if (publishing == closed) {
-            FOptionPane.showMessageDialog(label("lblForgeLobbyAlreadyPublishing"), TITLE);
+            FOptionPane.showMessageDialog(label("lblForgeLobbyAlreadyPublishing"), label("lblForgeLobbyTitle"));
             return;
         }
-        FOptionPane.showInputDialog(label("lblForgeLobbyPublicHost"), TITLE, suggestedAddress, null, address -> {
+        FOptionPane.showInputDialog(label("lblForgeLobbyPublicHost"), label("lblForgeLobbyTitle"), suggestedAddress, null, address -> {
             if (address != null) {
-                FOptionPane.showInputDialog(label("lblForgeLobbyRoomName"), TITLE, "", null, name -> {
+                FOptionPane.showInputDialog(label("lblForgeLobbyRoomName"), label("lblForgeLobbyTitle"), "", null, name -> {
                     if (name != null) {
-                        FOptionPane.showInputDialog(label("lblForgeLobbyLanguage"), TITLE, "Español",
-                                List.of("Español", "Inglés", "Portugués", "Francés", "Alemán", "Otro"), language -> {
+                        FOptionPane.showInputDialog(label("lblForgeLobbyLanguage"), label("lblForgeLobbyTitle"),
+                                Language.forLocale(FModel.getPreferences().getPref(FPref.UI_LANGUAGE)),
+                                List.of(Language.values()), language -> {
                                     if (language != null) {
-                                        FOptionPane.showConfirmDialog(label("lblForgeLobbyConsent"), TITLE, false,
+                                        FOptionPane.showConfirmDialog(label("lblForgeLobbyConsent"), label("lblForgeLobbyTitle"), false,
                                                 accepted -> {
                                                     if (accepted) {
-                                                        publish(closed, address, name, language);
+                                                        publish(closed, address, name, language.apiValue());
                                                     }
                                                 });
                                     }
@@ -153,7 +157,7 @@ final class MobileForgeLobbyDirectory {
             host = host.substring(1, host.length() - 1);
         }
         if (host.isEmpty() || name.trim().length() > 120) {
-            FOptionPane.showErrorDialog(label("lblForgeLobbyInvalidFields"), TITLE);
+            FOptionPane.showErrorDialog(label("lblForgeLobbyInvalidFields"), label("lblForgeLobbyTitle"));
             return;
         }
 
@@ -174,7 +178,7 @@ final class MobileForgeLobbyDirectory {
                         }
                     });
                     if (!closed.isDone()) {
-                        FOptionPane.showMessageDialog(label("lblForgeLobbyPublished"), TITLE);
+                        FOptionPane.showMessageDialog(label("lblForgeLobbyPublished"), label("lblForgeLobbyTitle"));
                     }
                 });
             } catch (final IOException | InterruptedException e) {
@@ -183,18 +187,11 @@ final class MobileForgeLobbyDirectory {
                         publishing = null;
                     }
                     if (!closed.isDone()) {
-                        FOptionPane.showErrorDialog(label("lblForgeLobbyPublishError"), TITLE);
+                        FOptionPane.showErrorDialog(label("lblForgeLobbyPublishError"), label("lblForgeLobbyTitle"));
                     }
                 });
             }
         });
-    }
-
-    private static String roomLabel(final Room room) {
-        final String name = room.name() == null || room.name().trim().isEmpty() ? room.connectionAddress() : room.name();
-        final String version = room.version() == null || room.version().trim().isEmpty() ? "" : " · " + room.version();
-        return "[" + room.format() + "] " + name + " · " + room.language() + " · "
-                + Forge.getLocalizer().getMessage("lblForgeLobbyAvailable", room.availableSlots()) + version;
     }
 
     private static String label(final String key) {

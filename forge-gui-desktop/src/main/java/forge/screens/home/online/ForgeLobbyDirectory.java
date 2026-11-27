@@ -1,6 +1,8 @@
 package forge.screens.home.online;
 
 import forge.gamemodes.net.ForgeLobbyClient;
+import forge.gamemodes.net.ForgeLobbyLabels;
+import forge.gamemodes.net.ForgeLobbyLabels.Language;
 import forge.gamemodes.net.ForgeLobbyRoomSync;
 import forge.gamemodes.net.ForgeLobbyRoomSync.RoomState;
 import forge.gamemodes.net.ForgeLobbyClient.Announcement;
@@ -8,15 +10,17 @@ import forge.gamemodes.net.ForgeLobbyClient.Publication;
 import forge.gamemodes.net.ForgeLobbyClient.Room;
 import forge.gamemodes.net.server.FServerManager;
 import forge.gamemodes.net.server.ServerGameLobby;
+import forge.toolbox.FComboBox;
+import forge.toolbox.FLabel;
 import forge.toolbox.FOptionPane;
+import forge.toolbox.FTextField;
+import forge.model.FModel;
+import forge.localinstance.properties.ForgePreferences.FPref;
 import forge.util.BuildInfo;
 import forge.util.Localizer;
 import io.netty.channel.ChannelFuture;
 
-import javax.swing.JComboBox;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import java.awt.GridLayout;
 import java.io.IOException;
@@ -32,7 +36,6 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 final class ForgeLobbyDirectory {
-    private static final String TITLE = "Forge Lobby";
     private static final Duration TIMEOUT = Duration.ofSeconds(8);
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
     private static final ForgeLobbyClient API = new ForgeLobbyClient(ForgeLobbyClient.PUBLIC_ENDPOINT,
@@ -77,11 +80,11 @@ final class ForgeLobbyDirectory {
                 SwingUtilities.invokeLater(() -> {
                     loading = false;
                     if (rooms.isEmpty()) {
-                        FOptionPane.showMessageDialog(label("lblForgeLobbyEmpty"), TITLE);
+                        FOptionPane.showMessageDialog(label("lblForgeLobbyEmpty"), label("lblForgeLobbyTitle"));
                         return;
                     }
                     final RoomChoice choice = FOptionPane.showInputDialog(label("lblForgeLobbyPickRoom"),
-                            TITLE, FOptionPane.INFORMATION_ICON, "", rooms);
+                            label("lblForgeLobbyTitle"), FOptionPane.INFORMATION_ICON, "", rooms);
                     if (choice != null) {
                         join.accept(choice.room().connectionAddress());
                     }
@@ -89,7 +92,7 @@ final class ForgeLobbyDirectory {
             } catch (final IOException | InterruptedException e) {
                 SwingUtilities.invokeLater(() -> {
                     loading = false;
-                    FOptionPane.showErrorDialog(label("lblForgeLobbyListError"), TITLE);
+                    FOptionPane.showErrorDialog(label("lblForgeLobbyListError"), label("lblForgeLobbyTitle"));
                 });
             }
         });
@@ -103,7 +106,7 @@ final class ForgeLobbyDirectory {
             return;
         }
         if (publishing == closed) {
-            FOptionPane.showMessageDialog(label("lblForgeLobbyAlreadyPublishing"), TITLE);
+            FOptionPane.showMessageDialog(label("lblForgeLobbyAlreadyPublishing"), label("lblForgeLobbyTitle"));
             return;
         }
 
@@ -111,20 +114,28 @@ final class ForgeLobbyDirectory {
             return;
         }
 
-        final JTextField name = new JTextField(25);
-        final JTextField address = new JTextField(suggestedAddress, 25);
-        final JComboBox<String> language = new JComboBox<>(
-                new String[]{"Español", "Inglés", "Portugués", "Francés", "Alemán", "Otro"});
+        final FTextField name = new FTextField.Builder().maxLength(120).build();
+        name.setColumns(25);
+        final FTextField address = new FTextField.Builder().text(suggestedAddress).build();
+        address.setColumns(25);
+        final FComboBox<Language> language = new FComboBox<>(Language.values());
+        language.setSelectedItem(Language.forLocale(FModel.getPreferences().getPref(FPref.UI_LANGUAGE)));
         final JPanel fields = new JPanel(new GridLayout(0, 2, 8, 4));
         fields.setOpaque(false);
-        fields.add(new JLabel(label("lblForgeLobbyRoomName")));
+        final FLabel nameLabel = new FLabel.Builder().text(label("lblForgeLobbyRoomName")).build();
+        nameLabel.setLabelFor(name);
+        fields.add(nameLabel);
         fields.add(name);
-        fields.add(new JLabel(label("lblForgeLobbyPublicHost")));
+        final FLabel addressLabel = new FLabel.Builder().text(label("lblForgeLobbyPublicHost")).build();
+        addressLabel.setLabelFor(address);
+        fields.add(addressLabel);
         fields.add(address);
-        fields.add(new JLabel(label("lblForgeLobbyLanguage")));
+        final FLabel languageLabel = new FLabel.Builder().text(label("lblForgeLobbyLanguage")).build();
+        languageLabel.setLabelFor(language);
+        fields.add(languageLabel);
         fields.add(language);
 
-        final FOptionPane dialog = new FOptionPane(label("lblForgeLobbyConsent"), TITLE,
+        final FOptionPane dialog = new FOptionPane(label("lblForgeLobbyConsent"), label("lblForgeLobbyTitle"),
                 FOptionPane.INFORMATION_ICON, fields,
                 List.of(label("lblForgeLobbyPublish"), label("lblCancel")), 1);
         dialog.setVisible(true);
@@ -139,11 +150,11 @@ final class ForgeLobbyDirectory {
             host = host.substring(1, host.length() - 1);
         }
         if (host.isEmpty() || name.getText().trim().length() > 120) {
-            FOptionPane.showErrorDialog(label("lblForgeLobbyInvalidFields"), TITLE);
+            FOptionPane.showErrorDialog(label("lblForgeLobbyInvalidFields"), label("lblForgeLobbyTitle"));
             return;
         }
         final Announcement details = new Announcement(name.getText().trim(), "Otro",
-                (String) language.getSelectedItem(), 2, 1, host, listeningAddress.getPort(), BuildInfo.getVersionString(), "", true);
+                ((Language) language.getSelectedItem()).apiValue(), 2, 1, host, listeningAddress.getPort(), BuildInfo.getVersionString(), "", true);
         final RoomState initial = ForgeLobbyRoomSync.snapshot(details, lobby);
         publishing = closed;
         REQUESTS.execute(() -> {
@@ -158,7 +169,7 @@ final class ForgeLobbyDirectory {
                     if (publishing == closed) {
                         publishing = null;
                     }
-                    FOptionPane.showErrorDialog(label("lblForgeLobbyPublishError"), TITLE);
+                    FOptionPane.showErrorDialog(label("lblForgeLobbyPublishError"), label("lblForgeLobbyTitle"));
                 });
             }
         });
@@ -172,7 +183,7 @@ final class ForgeLobbyDirectory {
             }
         });
         if (!closed.isDone()) {
-            FOptionPane.showMessageDialog(label("lblForgeLobbyPublished"), TITLE);
+            FOptionPane.showMessageDialog(label("lblForgeLobbyPublished"), label("lblForgeLobbyTitle"));
         }
     }
 
@@ -183,10 +194,7 @@ final class ForgeLobbyDirectory {
     private record RoomChoice(Room room) {
         @Override
         public String toString() {
-            final String name = room.name() == null || room.name().isBlank() ? room.connectionAddress() : room.name();
-            final String version = room.version() == null || room.version().isBlank() ? "" : " · " + room.version();
-            return "[" + room.format() + "] " + name + " · " + room.language() + " · "
-                    + Localizer.getInstance().getMessage("lblForgeLobbyAvailable", room.availableSlots()) + version;
+            return ForgeLobbyLabels.room(room);
         }
     }
 }

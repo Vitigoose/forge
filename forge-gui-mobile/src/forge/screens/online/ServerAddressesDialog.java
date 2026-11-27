@@ -62,7 +62,7 @@ public final class ServerAddressesDialog {
                 localizer.getMessage("lblServerURL"),
                 FOptionPane.INFORMATION_ICON,
                 list,
-                canPublish ? ImmutableList.of(localizer.getMessage("lblOK"), localizer.getMessage("lblForgeLobbyPublish"))
+                canPublish ? ImmutableList.of(localizer.getMessage("lblOK"), localizer.getMessage("lblForgeLobbyPublishShort"))
                         : ImmutableList.of(localizer.getMessage("lblOK")),
                 0,
                 result -> {

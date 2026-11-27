@@ -158,7 +158,7 @@ public enum CSubmenuOnlineLobby implements ICDoc, IMenuProvider {
             holder[0].setVisible(false);
             ForgeLobbyDirectory.publish(externalHost);
         });
-        panel.add(publish, "span 3, align right, gaptop 10");
+        panel.add(publish, "span 3, align right, gaptop 10, w 235!, h 28!");
 
         // Pass null as the prompt message so dialog width is driven by the panel's
         // actual content width rather than the much-wider localised instruction line.
