@@ -155,6 +155,7 @@ public final class FServerManager implements IHasForgeLog, HostingServer.Server 
     private ILobbyListener lobbyListener;
     private IDraftEventHandler draftHandler;
     private int port;
+    private volatile ChannelFuture serverCloseFuture;
     private static final Localizer localizer = Localizer.getInstance();
     private final Thread shutdownHook = new Thread(() -> {
         if (HostingServer.isHosting()) {
@@ -261,6 +262,7 @@ public final class FServerManager implements IHasForgeLog, HostingServer.Server 
 
             // Bind and start to accept incoming connections.
             final ChannelFuture ch = b.bind(port).sync().channel().closeFuture();
+            serverCloseFuture = ch;
             new Thread(() -> {
                 try {
                     ch.sync();
@@ -303,6 +305,15 @@ public final class FServerManager implements IHasForgeLog, HostingServer.Server 
         }
     }
 
+    /** The lifetime of the current listening socket, or null when it is not hosting. */
+    public ChannelFuture getServerCloseFuture() {
+        return HostingServer.isHosting() ? serverCloseFuture : null;
+    }
+
+    public ServerGameLobby getHostedLobby() {
+        return localLobby;
+    }
+
     public void stopServer() {
         stopServer(true);
     }
@@ -342,6 +353,7 @@ public final class FServerManager implements IHasForgeLog, HostingServer.Server 
             Runtime.getRuntime().removeShutdownHook(shutdownHook);
         }
         HostingServer.set(null);
+        serverCloseFuture = null;
         NetworkLogConfig.deactivateNetworkLogging();
     }
 

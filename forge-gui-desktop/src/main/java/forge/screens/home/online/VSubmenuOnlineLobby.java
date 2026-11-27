@@ -125,10 +125,15 @@ public enum VSubmenuOnlineLobby implements IVSubmenu<CSubmenuOnlineLobby>, IOnli
             btnJoin.setFont(FSkin.getRelativeFont(18));
             btnJoin.addActionListener(e -> getLayoutControl().joinGame());
 
-            final JPanel buttonPanel = new JPanel(new MigLayout("insets 0, gap 20, ax center"));
+            final FButton btnBrowse = new FButton(localizer.getMessage("lblForgeLobbyBrowse"));
+            btnBrowse.setFont(FSkin.getRelativeFont(18));
+            btnBrowse.addActionListener(e -> getLayoutControl().browseForgeLobby());
+
+            final JPanel buttonPanel = new JPanel(new MigLayout("insets 0, gap 20, ax center, wrap 2"));
             buttonPanel.setOpaque(false);
             buttonPanel.add(btnHost, "w 200!, h 50!");
             buttonPanel.add(btnJoin, "w 200!, h 50!");
+            buttonPanel.add(btnBrowse, "span 2, growx, h 50!");
 
             infoBox.add(lblTitle, "ax center, gap 0 0 0 15");
             infoBox.add(lblWarning, "ax center, gap 0 0 0 15");

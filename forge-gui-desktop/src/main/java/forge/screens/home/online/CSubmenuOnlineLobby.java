@@ -72,6 +72,13 @@ public enum CSubmenuOnlineLobby implements ICDoc, IMenuProvider {
         FThreads.invokeInBackgroundThread(() -> join(url));
     }
 
+    void browseForgeLobby() {
+        ForgeLobbyDirectory.browse(url -> {
+            NetConnectUtil.ensurePlayerName();
+            FThreads.invokeInBackgroundThread(() -> join(url));
+        });
+    }
+
     private void host() {
         SwingUtilities.invokeLater(() -> {
             SOverlayUtils.startGameOverlay(Localizer.getInstance().getMessage("lblStartingServer"));
@@ -142,6 +149,16 @@ public enum CSubmenuOnlineLobby implements ICDoc, IMenuProvider {
                     .fontSize(11).fontStyle(Font.ITALIC).fontAlign(SwingConstants.LEFT).build(),
                     "span 3, growx, gaptop 10");
         }
+
+        final FButton publish = new FButton(localizer.getMessage("lblForgeLobbyPublish"));
+        final String externalUrl = addresses.labels.isEmpty() || !"External (WAN)".equals(addresses.labels.get(0))
+                ? "" : addresses.urls.get(0);
+        final String externalHost = externalUrl.isEmpty() ? "" : externalUrl.substring(0, externalUrl.lastIndexOf(':'));
+        publish.addActionListener(e -> {
+            holder[0].setVisible(false);
+            ForgeLobbyDirectory.publish(externalHost);
+        });
+        panel.add(publish, "span 3, align right, gaptop 10, w 235!, h 28!");
 
         // Pass null as the prompt message so dialog width is driven by the panel's
         // actual content width rather than the much-wider localised instruction line.
