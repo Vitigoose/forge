@@ -74,7 +74,7 @@ jobs:
         run: |
           mvn -B -pl forge-gui-android -am -P android-test-build -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true verify
           mkdir downloads
-          cp forge-gui-android/target/*-signed-aligned.apk downloads/Forge-Lobby-Android.apk
+          cp forge-gui-android/target/*-aligned-debugSigned.apk downloads/Forge-Lobby-Android.apk
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs downloads/Forge-Lobby-Android.apk
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging downloads/Forge-Lobby-Android.apk | grep -F "package: name='forge.app.lobbytest'"
           unzip -l downloads/Forge-Lobby-Android.apk assets/forge-lobby-resources.zip
