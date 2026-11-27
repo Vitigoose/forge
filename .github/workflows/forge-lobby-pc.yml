@@ -4,6 +4,11 @@ on:
   push:
     branches: [forge-lobby-integration]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing draft release tag to receive the downloads
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -20,8 +25,58 @@ jobs:
           cache: maven
       - name: Build the desktop installer
         run: mvn -B -pl forge-installer,adventure-editor -am -P windows-linux -Dmaven.test.skip=true install
+      - name: Prepare installer download
+        run: |
+          mkdir downloads
+          cp forge-installer/target/forge-installer-*.jar downloads/Forge-Lobby-Instalador.jar
+      - name: Package a portable Windows x64 build with Java
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          bundle=$(find forge-installer/target -maxdepth 1 -type d -name 'forge-installer-*' -print -quit)
+          mkdir -p portable/Forge-Lobby java
+          app=portable/Forge-Lobby
+          cp -a "$bundle/res" "$app/"
+          cp "$bundle"/forge-gui-desktop-*-jar-with-dependencies.jar "$bundle/LICENSE.txt" "$app/"
+          curl -fsSL 'https://api.adoptium.net/v3/assets/latest/17/hotspot?architecture=x64&image_type=jre&os=windows&vendor=eclipse' -o java/temurin.json
+          curl -fsSL "$(jq -er '.[0].binary.package.link' java/temurin.json)" -o java/temurin.zip
+          (cd java && jq -er '.[0].binary.package | "\(.checksum)  temurin.zip"' temurin.json | sha256sum -c -)
+          unzip -q java/temurin.zip -d java
+          mv java/*-jre "$app/runtime"
+          python - "$bundle/forge.cmd" "$app/Abrir Forge.cmd" <<'PYTHON'
+          from pathlib import Path
+          import sys
+          source, target = map(Path, sys.argv[1:])
+          launcher = source.read_text().replace(
+              'pushd %~dp0', 'setlocal\nset "PATH=%~dp0runtime\\bin;%PATH%"\npushd "%~dp0"'
+          )
+          target.write_text(launcher + '\n', encoding='ascii', newline='\r\n')
+          PYTHON
+          printf 'userDir=./datos/\ncacheDir=./datos/cache/\n' > "$app/forge.profile.properties"
+          (cd portable && zip -qr ../downloads/Forge-Lobby-Windows-x64.zip Forge-Lobby)
+          unzip -tq downloads/Forge-Lobby-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: Forge-Lobby-Instalador
-          path: forge-installer/target/forge-installer-*.jar
+          name: Forge-Lobby-PC
+          path: downloads/
+          compression-level: 0
           if-no-files-found: error
+
+  release-assets:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Forge-Lobby-PC
+          path: downloads
+      - name: Upload the downloads to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          test "$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release upload "$RELEASE_TAG" downloads/* -R "$GITHUB_REPOSITORY"
