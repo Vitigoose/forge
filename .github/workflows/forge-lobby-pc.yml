@@ -1,0 +1,27 @@
+name: Forge Lobby PC installer
+
+on:
+  push:
+    branches: [forge-lobby-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Build the desktop installer
+        run: mvn -B -pl forge-installer,adventure-editor -am -P windows-linux -Dmaven.test.skip=true install
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Forge-Lobby-Instalador
+          path: forge-installer/target/forge-installer-*.jar
+          if-no-files-found: error
