@@ -140,8 +140,12 @@ public class Main extends AndroidApplication {
         return !TextUtils.isEmpty(getSystemProperty("ro.miui.ui.version.name"));
     }
 
+    private boolean isForgeLobbyTestBuild() {
+        return "forge.app.lobbytest".equals(getPackageName());
+    }
+
     public boolean needExternalFileAccess() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager();
+        return !isForgeLobbyTestBuild() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager();
     }
 
     public static String getSystemProperty(String propName) {
@@ -506,6 +510,9 @@ public class Main extends AndroidApplication {
     }
 
     private boolean checkPermission() {
+        if (isForgeLobbyTestBuild()) {
+            return true; // This package keeps its own resources and saves under getFilesDir().
+        }
         int pid = android.os.Process.myPid();
         int uid = android.os.Process.myUid();
         try {
@@ -533,13 +540,17 @@ public class Main extends AndroidApplication {
         config.useImmersiveMode = false;
         config.nativeLoader = () -> ReLinker.loadLibrary(getContext(), "gdx");
 
-        if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
+        if (!isForgeLobbyTestBuild() && !Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
             String message = getDeviceName() + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB" + "\n" + "LibGDX " + Version.VERSION + "\n" + "Can't access external storage";
             Main.this.setRequestedOrientation(Main.this.getResources().getConfiguration().orientation);
             loadGame(hwInfo, "", "", false, adapter, permissiongranted, isTabletDevice, config, true, message);
             return;
         }
-        ASSETS_DIR = Build.VERSION.SDK_INT > Build.VERSION_CODES.Q ? getContext().getObbDir() + "/Forge/" : Environment.getExternalStorageDirectory() + "/Forge/";
+        if (isForgeLobbyTestBuild()) {
+            ASSETS_DIR = getFilesDir() + "/Forge/";
+        } else {
+            ASSETS_DIR = Build.VERSION.SDK_INT > Build.VERSION_CODES.Q ? getContext().getObbDir() + "/Forge/" : Environment.getExternalStorageDirectory() + "/Forge/";
+        }
         if (!FileUtil.ensureDirectoryExists(ASSETS_DIR)) {
             String message = getDeviceName() + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB" + "\n" + "LibGDX " + Version.VERSION + "\n" + "Can't access external storage\nPath: " + ASSETS_DIR;
             Main.this.setRequestedOrientation(Main.this.getResources().getConfiguration().orientation);

@@ -1,0 +1,94 @@
+name: Forge Lobby Android APK
+
+on:
+  push:
+    branches: [forge-lobby-integration]
+    paths:
+      - .github/workflows/forge-lobby-android.yml
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing draft release tag for the APK
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Install Android SDK packages
+        run: sdkmanager --install "build-tools;35.0.0" "platform-tools" "platforms;android-35"
+      - name: Install Forge's Android Maven plugin
+        run: |
+          plugin="$HOME/.m2/repository/com/simpligility/maven/plugins/android-maven-plugin/4.6.2"
+          mkdir -p "$plugin"
+          for extension in jar pom; do
+            curl -fsSL "https://github.com/Card-Forge/android-maven-plugin/releases/download/4.6.2/android-maven-plugin-4.6.2.$extension" -o "$plugin/android-maven-plugin-4.6.2.$extension"
+          done
+      - name: Prepare an independent app with bundled resources
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+
+          manifest = Path("forge-gui-android/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
+          replacements = {
+              'package="forge.app"': 'package="forge.app.lobbytest"',
+              'android:name=".Launcher"': 'android:name="forge.app.Launcher"',
+              'android:name=".Main"': 'android:name="forge.app.Main"',
+              'android:label="@string/app_name"': 'android:label="Forge Lobby Test"',
+              'android:authorities=".SentryInitProvider"': 'android:authorities="forge.app.lobbytest.SentryInitProvider"',
+              'android:authorities=".SentryPerformanceProvider"': 'android:authorities="forge.app.lobbytest.SentryPerformanceProvider"',
+              'android:authorities="com.mydomain.publicfileprovider"': 'android:authorities="forge.app.lobbytest.PublicFileProvider"',
+          }
+          for source, replacement in replacements.items():
+              assert source in text, source
+              text = text.replace(source, replacement)
+          manifest.write_text(text)
+          PYTHON
+          mkdir -p bundle/res/cardsfolder
+          rsync -a --exclude=/cardsfolder/ --exclude='*.xcf' forge-gui/res/ bundle/res/
+          (cd forge-gui/res/cardsfolder && zip -q -1 -r ../../../bundle/res/cardsfolder/cardsfolder.zip .)
+          (cd bundle && zip -q -1 -r ../forge-gui-android/assets/forge-lobby-resources.zip res)
+          printf '%s\n' "$GITHUB_SHA" > forge-gui-android/assets/forge-lobby-build.txt
+      - name: Build and verify the signed APK
+        run: |
+          mvn -B -pl forge-gui-android -am -P android-test-build -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true verify
+          mkdir downloads
+          cp forge-gui-android/target/*-signed-aligned.apk downloads/Forge-Lobby-Android.apk
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs downloads/Forge-Lobby-Android.apk
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging downloads/Forge-Lobby-Android.apk | grep -F "package: name='forge.app.lobbytest'"
+          unzip -l downloads/Forge-Lobby-Android.apk assets/forge-lobby-resources.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Forge-Lobby-Android
+          path: downloads/Forge-Lobby-Android.apk
+          if-no-files-found: error
+          compression-level: 0
+
+  release-assets:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Forge-Lobby-Android
+      - name: Attach the APK to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          test "$(gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release upload "$RELEASE_TAG" Forge-Lobby-Android.apk -R "$GITHUB_REPOSITORY"

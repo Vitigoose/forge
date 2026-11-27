@@ -1,6 +1,9 @@
 package forge.assets;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.zip.ZipInputStream;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -35,9 +38,62 @@ public class AssetsDownloader {
     private final static ImmutableList<String> downloadIgnoreExit = ImmutableList.of("Download", "Ignore", "Exit");
     private final static ImmutableList<String> downloadExit = ImmutableList.of("Download", "Exit");
 
+    private static boolean installBundledResources(final FileHandle bundled) {
+        final FileHandle marker = Gdx.files.absolute(ASSETS_DIR).child("forge-lobby-resources.version");
+        final String build = Gdx.files.internal("forge-lobby-build.txt").readString();
+        if (marker.exists() && build.equals(marker.readString())
+                && Gdx.files.absolute(DEFAULT_SKINS_DIR).child(ADV_TEXTURE_BG_FILE).exists()) {
+            return true;
+        }
+
+        Forge.getSplashScreen().getProgressBar().setDescription("Extracting Forge Lobby resources...");
+        final Path assets = Gdx.files.absolute(ASSETS_DIR).file().toPath().toAbsolutePath().normalize();
+        final Path resources = assets.resolve("res");
+        try (var zip = new ZipInputStream(bundled.read())) {
+            for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                final Path target = assets.resolve(entry.getName()).normalize();
+                if (!target.startsWith(resources)) {
+                    throw new IOException("Invalid bundled resource path: " + entry.getName());
+                }
+                if (entry.isDirectory()) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.createDirectories(target.getParent());
+                    try (var output = Files.newOutputStream(target)) {
+                        final byte[] buffer = new byte[32 * 1024];
+                        for (int length = zip.read(buffer); length != -1; length = zip.read(buffer)) {
+                            output.write(buffer, 0, length);
+                        }
+                    }
+                }
+            }
+            // The splash screen may already have loaded its fallback skin.
+            FThreads.invokeInEdtAndWait(() -> {
+                FSkinFont.updateAll();
+                FSkin.loadLight(FSkin.getName(), Forge.getSplashScreen());
+            });
+            marker.writeString(build, false, "UTF-8");
+            return true;
+        } catch (final IOException | RuntimeException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
     public static void checkForUpdates(boolean exited, Runnable runnable) {
         if (exited)
             return;
+        final FileHandle bundled = Gdx.files.internal("forge-lobby-resources.zip");
+        if (GuiBase.isAndroid() && bundled.exists()) {
+            if (installBundledResources(bundled)) {
+                run(runnable);
+            } else {
+                Forge.getSplashScreen().prepareForDialogs();
+                SOptionPane.showMessageDialog("Could not unpack the Forge Lobby resources. Check the available storage and restart Forge.");
+                Forge.exitAnimation(false);
+            }
+            return;
+        }
         final String versionString = Forge.getDeviceAdapter().getVersionString();
         Forge.getSplashScreen().getProgressBar().setDescription("Checking for updates...");
         if (versionString.contains("GIT")) {

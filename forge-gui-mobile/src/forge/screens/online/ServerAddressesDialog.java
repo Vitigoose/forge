@@ -8,6 +8,7 @@ import forge.assets.FSkinColor;
 import forge.assets.FSkinFont;
 import forge.assets.FSkinImage;
 import forge.gamemodes.net.NetConnectUtil;
+import forge.gamemodes.net.server.HostingServer;
 import forge.gui.FThreads;
 import forge.gui.GuiBase;
 import forge.toolbox.FButton;
@@ -51,15 +52,24 @@ public final class ServerAddressesDialog {
 
         final FOptionPane[] holder = new FOptionPane[1];
         final AddressList list = new AddressList(addresses, holder, localizer);
+        final boolean canPublish = HostingServer.isHosting();
+        final String externalUrl = addresses.labels.isEmpty() || !"External (WAN)".equals(addresses.labels.get(0))
+                ? "" : addresses.urls.get(0);
+        final String externalHost = externalUrl.isEmpty() ? "" : externalUrl.substring(0, externalUrl.lastIndexOf(':'));
         holder[0] = new FOptionPane(
                 localizer.getMessage("lblChooseAddressToCopy"),
                 FSkinFont.get(12),
                 localizer.getMessage("lblServerURL"),
                 FOptionPane.INFORMATION_ICON,
                 list,
-                ImmutableList.of(localizer.getMessage("lblOK")),
+                canPublish ? ImmutableList.of(localizer.getMessage("lblOK"), localizer.getMessage("lblForgeLobbyPublish"))
+                        : ImmutableList.of(localizer.getMessage("lblOK")),
                 0,
-                null);
+                result -> {
+                    if (result == 1) {
+                        MobileForgeLobbyDirectory.publish(externalHost);
+                    }
+                });
         holder[0].show();
     }
 
