@@ -1,5 +1,7 @@
 package forge.screens.home.online;
 
+import forge.game.GameFormat;
+import forge.game.GameType;
 import forge.gamemodes.match.LobbySlotType;
 import forge.screens.home.online.ForgeLobbyClient.Announcement;
 import forge.screens.home.online.ForgeLobbyClient.Publication;
@@ -93,11 +95,6 @@ final class ForgeLobbyDirectory {
 
         final JTextField name = new JTextField(25);
         final JTextField address = new JTextField(suggestedAddress, 25);
-        final JComboBox<String> format = new JComboBox<>(
-                new String[]{"Commander", "Modern", "Standard", "Pauper", "Legacy", "Vintage", "Otro"});
-        final String currentFormat = lobby.getFormatChoice().toString();
-        format.setSelectedItem("Otro");
-        format.setSelectedItem(currentFormat);
         final JComboBox<String> language = new JComboBox<>(
                 new String[]{"Español", "Inglés", "Portugués", "Francés", "Alemán", "Otro"});
         final JPanel fields = new JPanel(new GridLayout(0, 2, 8, 4));
@@ -106,8 +103,6 @@ final class ForgeLobbyDirectory {
         fields.add(name);
         fields.add(new JLabel(label("lblForgeLobbyPublicHost")));
         fields.add(address);
-        fields.add(new JLabel(label("lblForgeLobbyFormat")));
-        fields.add(format);
         fields.add(new JLabel(label("lblForgeLobbyLanguage")));
         fields.add(language);
 
@@ -129,7 +124,7 @@ final class ForgeLobbyDirectory {
             FOptionPane.showErrorDialog(label("lblForgeLobbyInvalidFields"), TITLE);
             return;
         }
-        final Announcement details = new Announcement(name.getText().trim(), (String) format.getSelectedItem(),
+        final Announcement details = new Announcement(name.getText().trim(), "Otro",
                 (String) language.getSelectedItem(), 2, 1, host, listeningAddress.getPort(), BuildInfo.getVersionString(), "", true);
         final RoomState initial = snapshot(details, lobby);
         publishing = closed;
@@ -153,42 +148,99 @@ final class ForgeLobbyDirectory {
 
     private static void track(final ChannelFuture closed, final ServerGameLobby lobby,
                               final Publication publication, final RoomState initial) {
-        final Timer refresh = new Timer(60_000, e -> {
-            final RoomState state = snapshot(initial.announcement(), lobby);
-            REQUESTS.execute(() -> update(closed, publication, state));
-        });
-        closed.addListener(ignored -> {
-            SwingUtilities.invokeLater(() -> {
-                refresh.stop();
-                if (publishing == closed) {
-                    publishing = null;
-                }
-            });
-            REQUESTS.execute(() -> {
-                try {
-                    API.close(publication);
-                } catch (final IOException | InterruptedException e) {
-                    // The directory expires the listing if its removal could not be delivered.
-                }
-            });
-        });
-        if (closed.isDone()) {
-            return;
-        }
-        if (!"open".equals(initial.status())) {
-            REQUESTS.execute(() -> update(closed, publication, initial));
-        }
-        refresh.start();
-        FOptionPane.showMessageDialog(label("lblForgeLobbyPublished"), TITLE);
+        new RoomSync(closed, lobby, publication, initial).start();
     }
 
-    private static void update(final ChannelFuture closed, final Publication publication, final RoomState state) {
-        if (!closed.isDone()) {
-            try {
-                API.update(publication, state.announcement(), state.status());
-            } catch (final IOException | InterruptedException e) {
-                // The next refresh can recover from a temporary outage.
+    // Swing owns the snapshots and scheduling. HTTP requests are serialized off the EDT.
+    private static final class RoomSync {
+        private final ChannelFuture closed;
+        private final ServerGameLobby lobby;
+        private final Publication publication;
+        private final Announcement details;
+        private final Timer changes = new Timer(400, e -> sync(false));
+        private final Timer refresh = new Timer(60_000, e -> sync(true));
+        private RoomState saved;
+        private boolean updating;
+        private boolean pending;
+
+        RoomSync(final ChannelFuture closed, final ServerGameLobby lobby,
+                 final Publication publication, final RoomState initial) {
+            this.closed = closed;
+            this.lobby = lobby;
+            this.publication = publication;
+            details = initial.announcement();
+            // POST always creates an open announcement.
+            saved = new RoomState(details, "open");
+            changes.setRepeats(false);
+        }
+
+        void start() {
+            closed.addListener(ignored -> {
+                SwingUtilities.invokeLater(() -> {
+                    changes.stop();
+                    refresh.stop();
+                    lobby.setRoomStateListener(null);
+                    if (publishing == closed) {
+                        publishing = null;
+                    }
+                });
+                REQUESTS.execute(() -> {
+                    try {
+                        API.close(publication);
+                    } catch (final IOException | InterruptedException e) {
+                        // The directory expires the listing if removal could not be delivered.
+                    }
+                });
+            });
+            if (closed.isDone()) {
+                return;
             }
+            lobby.setRoomStateListener(() -> SwingUtilities.invokeLater(() -> {
+                if (!closed.isDone()) {
+                    changes.restart();
+                }
+            }));
+            // Include changes made while the original POST was in flight.
+            sync(false);
+            refresh.start();
+            FOptionPane.showMessageDialog(label("lblForgeLobbyPublished"), TITLE);
+        }
+
+        private void sync(final boolean force) {
+            if (closed.isDone()) {
+                return;
+            }
+            if (updating) {
+                pending = true;
+                return;
+            }
+            final RoomState state = snapshot(details, lobby);
+            if (!force && state.equals(saved)) {
+                return;
+            }
+            updating = true;
+            REQUESTS.execute(() -> {
+                boolean success = false;
+                try {
+                    if (!closed.isDone()) {
+                        API.update(publication, state.announcement(), state.status());
+                        success = true;
+                    }
+                } catch (final IOException | InterruptedException e) {
+                    // The next refresh retries with the current state.
+                }
+                final boolean updated = success;
+                SwingUtilities.invokeLater(() -> {
+                    updating = false;
+                    if (updated) {
+                        saved = state;
+                    }
+                    if (pending) {
+                        pending = false;
+                        sync(false);
+                    }
+                });
+            });
         }
     }
 
@@ -209,8 +261,38 @@ final class ForgeLobbyDirectory {
         final int players = Math.max(1, occupied);
         final int capacity = Math.max(2, occupied + open);
         final String status = lobby.isMatchActive() ? "started" : open == 0 ? "full" : "open";
-        return new RoomState(new Announcement(details.name(), details.format(), details.language(),
-                capacity, players, details.address(), details.port(), details.version(), details.description(), true), status);
+        final var event = lobby.getCurrentEvent();
+        final String formatName;
+        if (!lobby.getData().isLimitedMode()) {
+            formatName = formatName(lobby.getFormatChoice());
+        } else if (event == null) {
+            formatName = "Limited";
+        } else {
+            formatName = switch (event.getFormat()) {
+                case BOOSTER_DRAFT -> "Booster Draft";
+                case SEALED -> "Sealed";
+            };
+        }
+        final String category = formatCategory(formatName);
+        return new RoomState(new Announcement(details.name(), category, details.language(), capacity, players,
+                details.address(), details.port(), details.version(), "Otro".equals(category) ? formatName : "", true), status);
+    }
+
+    private static String formatName(final Object choice) {
+        if (choice instanceof GameFormat format) {
+            return format.getName();
+        }
+        if (choice instanceof GameType type) {
+            return type.getEnglishName();
+        }
+        return "";
+    }
+
+    private static String formatCategory(final String name) {
+        return switch (name) {
+            case "Commander", "Modern", "Standard", "Pauper", "Legacy", "Vintage" -> name;
+            default -> "Otro";
+        };
     }
 
     private static String label(final String key) {

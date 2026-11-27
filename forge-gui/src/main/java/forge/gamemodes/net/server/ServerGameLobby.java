@@ -32,6 +32,19 @@ public final class ServerGameLobby extends GameLobby implements IHasForgeLog {
 
     private BoosterDraftHost draftHost;
     private NetworkEvent currentEvent;
+    private volatile Runnable roomStateListener;
+
+    /** Registers an optional observer of changes to this hosted room. */
+    public void setRoomStateListener(final Runnable listener) {
+        roomStateListener = listener;
+    }
+
+    private void notifyRoomStateChanged() {
+        final Runnable listener = roomStateListener;
+        if (listener != null) {
+            listener.run();
+        }
+    }
 
     public NetworkEvent getCurrentEvent() { return currentEvent; }
     public void setCurrentEvent(NetworkEvent event) { this.currentEvent = event; }
@@ -44,6 +57,7 @@ public final class ServerGameLobby extends GameLobby implements IHasForgeLog {
             getData().setEventView(null);
         }
         super.updateView(fullUpdate);
+        notifyRoomStateChanged();
     }
 
     /**
@@ -152,6 +166,7 @@ public final class ServerGameLobby extends GameLobby implements IHasForgeLog {
 
     @Override
     protected void onGameStarted() {
+        notifyRoomStateChanged();
     }
 
     @Override
